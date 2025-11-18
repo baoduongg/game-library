@@ -8,6 +8,8 @@ import {
   joinRoom,
   listenToRoom,
   leaveRoom,
+  listenToActiveRooms,
+  getActiveRooms,
 } from '@/services/roomService';
 
 const GamePlayer = () => {
@@ -28,10 +30,13 @@ const GamePlayer = () => {
   const [gameMode, setGameMode] = useState(null); // null (not selected), 'single' or 'multi'
   const [room, setRoom] = useState(null);
   const [showMultiplayerMenu, setShowMultiplayerMenu] = useState(false);
+  const [showRoomsList, setShowRoomsList] = useState(false);
+  const [activeRooms, setActiveRooms] = useState([]);
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [joiningRoom, setJoiningRoom] = useState(false);
   const iframeRef = useRef(null);
   const unsubscribeRef = useRef(null);
+  const unsubscribeRoomsRef = useRef(null);
 
   // Listen to auth state changes
   useEffect(() => {
@@ -66,6 +71,9 @@ const GamePlayer = () => {
     return () => {
       if (unsubscribeRef.current) {
         unsubscribeRef.current();
+      }
+      if (unsubscribeRoomsRef.current) {
+        unsubscribeRoomsRef.current();
       }
       if (room && currentUser) {
         leaveRoom(room.id, currentUser.email);
@@ -146,8 +154,8 @@ const GamePlayer = () => {
     iframe.src = iframe.src; // Reload iframe
   };
 
-  // Create new multiplayer room
-  const handleCreateRoom = async () => {
+  // Show multiplayer menu and load rooms
+  const handleShowMultiplayer = async () => {
     if (!isAuthenticated) {
       try {
         await signInWithPopup(auth, provider);
@@ -157,6 +165,19 @@ const GamePlayer = () => {
       }
     }
 
+    setShowMultiplayerMenu(true);
+    setShowRoomsList(true);
+
+    if (unsubscribeRoomsRef.current) {
+      unsubscribeRoomsRef.current();
+    }
+    unsubscribeRoomsRef.current = listenToActiveRooms(slug, (rooms) => {
+      setActiveRooms(rooms);
+    });
+  };
+
+  // Create new multiplayer room
+  const handleCreateRoom = async () => {
     try {
       setCreatingRoom(true);
       const roomId = await createRoom(
@@ -177,11 +198,49 @@ const GamePlayer = () => {
 
       setGameMode('multi');
       setShowMultiplayerMenu(false);
+      setShowRoomsList(false);
+
+      // Stop listening to rooms list
+      if (unsubscribeRoomsRef.current) {
+        unsubscribeRoomsRef.current();
+      }
     } catch (err) {
       console.error('Failed to create room:', err);
       alert('Failed to create room. Please try again.');
     } finally {
       setCreatingRoom(false);
+    }
+  };
+
+  // Join existing room
+  const handleJoinRoom = async (roomId) => {
+    try {
+      setJoiningRoom(true);
+      await joinRoom(roomId, currentUser.email, currentUser.displayName);
+
+      // Listen to room updates
+      unsubscribeRef.current = listenToRoom(roomId, (roomData) => {
+        if (roomData) {
+          setRoom(roomData);
+          if (roomData.status === 'playing') {
+            setGameMode('multi');
+          }
+        }
+      });
+
+      setGameMode('multi');
+      setShowMultiplayerMenu(false);
+      setShowRoomsList(false);
+
+      // Stop listening to rooms list
+      if (unsubscribeRoomsRef.current) {
+        unsubscribeRoomsRef.current();
+      }
+    } catch (err) {
+      console.error('Failed to join room:', err);
+      alert('Failed to join room. ' + err.message);
+    } finally {
+      setJoiningRoom(false);
     }
   };
 
@@ -387,7 +446,7 @@ const GamePlayer = () => {
 
               {/* Multiplayer */}
               <button
-                onClick={() => setShowMultiplayerMenu(true)}
+                onClick={handleShowMultiplayer}
                 className="group relative bg-gradient-to-br from-purple-900/30 to-[#330df2]/20 backdrop-blur-sm border-2 border-[#330df2]/50 hover:border-[#330df2] rounded-2xl p-8 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-[#330df2]/40"
               >
                 <div className="text-center">
@@ -462,16 +521,27 @@ const GamePlayer = () => {
           </div>
         </div>
 
-        {/* Multiplayer Options Modal */}
-        {showMultiplayerMenu && (
+        {/* Multiplayer Rooms List Modal */}
+        {showMultiplayerMenu && showRoomsList && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-gray-900 border-2 border-[#330df2]/50 rounded-2xl max-w-md w-full p-8 shadow-2xl">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-2xl font-bold text-white">
-                  Multiplayer Mode
-                </h3>
+            <div className="bg-gray-900 border-2 border-[#330df2]/50 rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden shadow-2xl">
+              <div className="flex items-center justify-between p-6 border-b border-gray-800">
+                <div>
+                  <h3 className="text-2xl font-bold text-white">
+                    Multiplayer Rooms
+                  </h3>
+                  <p className="text-sm text-gray-400 mt-1">
+                    Join an existing room or create a new one
+                  </p>
+                </div>
                 <button
-                  onClick={() => setShowMultiplayerMenu(false)}
+                  onClick={() => {
+                    setShowMultiplayerMenu(false);
+                    setShowRoomsList(false);
+                    if (unsubscribeRoomsRef.current) {
+                      unsubscribeRoomsRef.current();
+                    }
+                  }}
                   className="text-gray-400 hover:text-white transition-colors"
                 >
                   <svg
@@ -490,11 +560,12 @@ const GamePlayer = () => {
                 </button>
               </div>
 
-              <div className="space-y-4">
+              <div className="p-6">
+                {/* Create Room Button */}
                 <button
                   onClick={handleCreateRoom}
                   disabled={creatingRoom}
-                  className="w-full px-6 py-4 bg-[#330df2] text-white rounded-xl font-semibold hover:bg-[#4a1fff] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full px-6 py-4 bg-gradient-to-r from-[#330df2] to-purple-600 text-white rounded-xl font-semibold hover:from-[#4a1fff] hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed mb-6 shadow-lg shadow-[#330df2]/20"
                 >
                   {creatingRoom ? (
                     <span className="flex items-center justify-center gap-2">
@@ -520,14 +591,122 @@ const GamePlayer = () => {
                       Creating Room...
                     </span>
                   ) : (
-                    '🎮 Create New Room'
+                    <span className="flex items-center justify-center gap-2">
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 4v16m8-8H4"
+                        />
+                      </svg>
+                      Create New Room
+                    </span>
                   )}
                 </button>
 
-                <p className="text-sm text-gray-400 text-center">
-                  Create a room and share the link with your friend to play
-                  together
-                </p>
+                {/* Divider */}
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-800"></div>
+                  </div>
+                  <div className="relative flex justify-center text-sm">
+                    <span className="px-4 bg-gray-900 text-gray-400">
+                      Or join an existing room
+                    </span>
+                  </div>
+                </div>
+
+                {/* Rooms List */}
+                <div className="max-h-[40vh] overflow-y-auto space-y-3">
+                  {activeRooms.length === 0 ? (
+                    <div className="text-center py-12">
+                      <svg
+                        className="w-16 h-16 mx-auto text-gray-700 mb-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"
+                        />
+                      </svg>
+                      <p className="text-gray-400 text-lg font-medium">
+                        No rooms available
+                      </p>
+                      <p className="text-gray-500 text-sm mt-2">
+                        Be the first to create a room!
+                      </p>
+                    </div>
+                  ) : (
+                    activeRooms.map((room) => (
+                      <div
+                        key={room.id}
+                        className="bg-gray-800/50 border border-gray-700 rounded-xl p-4 hover:border-[#330df2]/50 transition-all group"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className="w-10 h-10 bg-gradient-to-br from-[#330df2] to-purple-600 rounded-lg flex items-center justify-center">
+                                <svg
+                                  className="w-5 h-5 text-white"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                                  />
+                                </svg>
+                              </div>
+                              <div>
+                                <h4 className="text-white font-semibold">
+                                  {room.playerNames?.[0] || 'Player'}'s Room
+                                </h4>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-xs text-gray-400">
+                                    {room.players?.length || 0}/2 players
+                                  </span>
+                                  <span className="w-1 h-1 bg-gray-600 rounded-full"></span>
+                                  <span className="text-xs text-green-400 flex items-center gap-1">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                    Waiting
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleJoinRoom(room.id)}
+                            disabled={
+                              joiningRoom ||
+                              room.players?.length >= 2 ||
+                              room.players?.includes(currentUser?.email)
+                            }
+                            className="px-4 py-2 bg-[#330df2] text-white rounded-lg hover:bg-[#4a1fff] transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                          >
+                            {room.players?.includes(currentUser?.email)
+                              ? 'Joined'
+                              : joiningRoom
+                              ? 'Joining...'
+                              : 'Join'}
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -537,7 +716,7 @@ const GamePlayer = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900">
+    <div className="max-h-screen bg-gray-900 overflow-hidden flex flex-col">
       {/* Header Controls */}
       <div className="bg-gray-800 border-b border-gray-700 px-4 py-3">
         <div className="container mx-auto flex items-center justify-between">
@@ -712,24 +891,6 @@ const GamePlayer = () => {
         </div>
 
         {/* Game Info Footer */}
-        <div className="mt-4 bg-gray-800 rounded-lg p-4">
-          <div className="flex items-center justify-between text-gray-300">
-            <div>
-              <p className="text-sm text-gray-400">Description</p>
-              <p className="mt-1">
-                {game.description || 'No description available'}
-              </p>
-            </div>
-            <div className="flex items-center gap-4 text-sm">
-              <div className="text-center">
-                <p className="text-gray-400">Plays</p>
-                <p className="text-lg font-bold text-white">
-                  {game.plays || 0}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

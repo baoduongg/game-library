@@ -3,6 +3,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   addDoc,
   updateDoc,
   deleteDoc,
@@ -12,6 +13,7 @@ import {
   serverTimestamp,
   arrayUnion,
   arrayRemove,
+  orderBy,
 } from 'firebase/firestore';
 
 const roomsCollection = collection(db, 'rooms');
@@ -253,7 +255,8 @@ export const getActiveRooms = async (gameSlug) => {
     const q = query(
       roomsCollection,
       where('gameSlug', '==', gameSlug),
-      where('status', '==', 'waiting')
+      where('status', '==', 'waiting'),
+      orderBy('createdAt', 'desc')
     );
 
     const snapshot = await getDocs(q);
@@ -263,6 +266,44 @@ export const getActiveRooms = async (gameSlug) => {
     }));
   } catch (error) {
     console.error('Error getting active rooms:', error);
+    throw error;
+  }
+};
+
+/**
+ * Listen to active rooms for a specific game in real-time
+ * @param {string} gameSlug - The slug of the game
+ * @param {Function} callback - Callback function to handle updates
+ * @returns {Function} - Unsubscribe function
+ */
+export const listenToActiveRooms = (gameSlug, callback) => {
+  try {
+    const q = query(
+      roomsCollection,
+      where('gameSlug', '==', gameSlug),
+      where('status', '==', 'waiting'),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        console.log('Listening to active rooms snapshot', snapshot);
+        const rooms = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        callback(rooms);
+      },
+      (error) => {
+        console.error('Error listening to active rooms:', error);
+        callback([], error);
+      }
+    );
+
+    return unsubscribe;
+  } catch (error) {
+    console.error('Error setting up rooms listener:', error);
     throw error;
   }
 };
