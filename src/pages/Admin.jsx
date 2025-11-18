@@ -11,6 +11,7 @@ const Admin = () => {
     category: '',
     gameUrl: '',
     thumbnail: '',
+    multiplayer: false,
   });
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -77,6 +78,7 @@ const Admin = () => {
         category: formData.category,
         gameUrl: formData.gameUrl,
         thumbnail: formData.thumbnail,
+        multiplayer: formData.multiplayer,
       });
 
       setSuccess('Game added successfully! Redirecting...');
@@ -89,6 +91,7 @@ const Admin = () => {
         category: '',
         gameUrl: '',
         thumbnail: '',
+        multiplayer: false,
       });
 
       // Redirect after 2 seconds
@@ -261,6 +264,32 @@ const Admin = () => {
                   <p className="text-xs text-gray-400 mt-1">
                     URL to your game hosted on GitHub Pages
                   </p>
+                </div>
+
+                {/* Multiplayer Support */}
+                <div>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="multiplayer"
+                      checked={formData.multiplayer}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          multiplayer: e.target.checked,
+                        }))
+                      }
+                      className="w-5 h-5 rounded border-[#330df2]/30 bg-[#1a1729]/80 text-[#330df2] focus:ring-2 focus:ring-[#330df2] cursor-pointer"
+                    />
+                    <div className="w-full">
+                      <span className="text-sm font-semibold text-white">
+                        Multiplayer Support
+                      </span>
+                      <p className="text-xs text-gray-400">
+                        Enable if this game supports multiplayer mode
+                      </p>
+                    </div>
+                  </label>
                 </div>
 
                 {/* Thumbnail URL */}

@@ -287,6 +287,24 @@ const Dashboard = () => {
                             {game.plays || 0} plays
                           </span>
                         </div>
+                        {/* Multiplayer */}
+                        <div className="flex items-center gap-1">
+                          <svg
+                            className="w-4 h-4"
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                          >
+                            <path d="M13 7H7v6h6V7z" />
+                            <path
+                              fillRule="evenodd"
+                              d="M5 3a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2H5zm10 12H5V5h10v10z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                          <span className="text-gray-400">
+                            {game.multiplayer ? 'Multiplayer' : 'Single Player'}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Play Button */}
